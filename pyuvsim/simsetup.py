@@ -403,8 +403,8 @@ def _construct_beam_list(beam_ids, telconfig):
 
         # first check to see if the beam_model is a string giving a file location
         if (isinstance(beam_model, str)
-                and (os.path.exists(beam_model) or
-                 os.path.exists(os.path.join(SIM_DATA_PATH, beam_model)))):
+                and (os.path.exists(beam_model)
+                     or os.path.exists(os.path.join(SIM_DATA_PATH, beam_model)))):
             if os.path.exists(beam_model):
                 beam_list.append(beam_model)
             else:
@@ -1011,6 +1011,7 @@ def initialize_uvdata_from_params(obs_params):
         if 'antenna_nums' in select_params:
             select_params['antenna_nums'] = list(map(int, select_params['antenna_nums']))
         redundant_threshold = param_dict['select'].get('redundant_threshold', None)
+        max_uv = param_dict['select'].get('max_uv', None)
         if 'bls' in select_params:
             bls = select_params['bls']
             if isinstance(bls, str):
@@ -1028,7 +1029,7 @@ def initialize_uvdata_from_params(obs_params):
 
         if max_uv is not None:
             u_center = (np.max(uv_obj.uvw_array[:, 0]) + np.min(uv_obj.uvw_array[:, 0])) / 2
-            v_center = (np.max(ub_obj.uvw_array[:, 1]) + np.min(uv_obj.uvw_array[:, 1])) / 2
+            v_center = (np.max(uv_obj.uvw_array[:, 1]) + np.min(uv_obj.uvw_array[:, 1])) / 2
             u_inds = np.abs(uv_obj.uvw_array[:, 0] - u_center) <= max_uv[0] / 2
             v_inds = np.abs(uv_obj.uvw_array[:, 1] - v_center) <= max_uv[1] / 2
             uv_inds = u_inds & v_inds
