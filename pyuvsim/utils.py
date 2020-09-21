@@ -110,14 +110,20 @@ def altaz_to_zenithangle_azimuth(altitude, azimuth):
 
 def zenithangle_azimuth_to_altaz(zenith_angle, azimuth):
     """
-    Convert from astropy altaz convention to UVBeam az/za convention.
+    Convert from astropy az/za convention to UVBeam az/za convention.
 
-    Args:
-        zenith_angle: in radians
-        azimuth: in radians in uvbeam convention: North of East(East=0, North=pi/2)
+    Parameters
+    ----------
+    zenith_angle: array_like of float
+        In radians
+    azimuth: array_like of float
+        In radians in uvbeam convention: North of East(East=0, North=pi/2)
 
-    Returns:
+    Returns
+    -------
+    array:
         altitude in radians
+    array:
         azimuth in radians in astropy convention: East of North (N=0, E=pi/2)
     """
     input_za = np.array(zenith_angle)
@@ -174,15 +180,22 @@ def write_uvdata(uv_obj, param_dict, return_filename=False, dryrun=False, out_fo
     """
     Parse output file information from parameters and write uvfits to file.
 
-    Args:
-        uv_obj: UVData object to write out.
-        param_dict: parameter dictionary defining output path, filename, and
-                    whether or not to clobber.
-        return_filename: (Default false) Return the file path
-        dryrun: (Default false) Don't write to file.
-        out_format: (Default uvfits) Write as uvfits/miriad/uvh5
+    Parameters
+    ----------
+    uv_obj: pyuvdata.UVData
+        Object to write out.
+    param_dict: dict
+        parameter dictionary defining output path, filename, and whether or not to clobber.
+    return_filename: bool
+        Return the file path. Default False.
+    dryrun: bool
+        Don't write to file. Default False.
+    out_format: str
+        Write as uvfits/miriad/uvh5. Default is uvfits.
 
-    Returns:
+    Returns
+    -------
+    str:
         File path, if return_filename is True
     """
     if 'filing' in param_dict.keys():
@@ -263,7 +276,7 @@ def iter_array_split(part_index, N, M):
     Returns an iterator giving the indices of `part` below:
         part = np.array_split(np.arange(N), M)[part_index]
 
-    This mimics the behavior of array_split without having to make
+    This mimics the behavior of numpy.array_split without having to make
     the whole array that will be split.
     """
 
