@@ -20,7 +20,7 @@ Npus = 1
 world_comm = None
 node_comm = None
 rank_comm = None
-
+status = None
 
 # Split serialized objects into chunks of 2 GiB
 INT_MAX = 2**31 - 1
@@ -49,9 +49,9 @@ def start_mpi(block_nonroot_stdout=True):
         Default True.
 
     """
-    global world_comm, node_comm, rank_comm, rank, Npus
+    global world_comm, node_comm, rank_comm, rank, Npus, status
     if not MPI.Is_initialized():
-        MPI.Init_thread(MPI.THREAD_SERIALIZED)     # RMA is incompatible with THREAD_MULTIPLE.
+        MPI.Init_thread(MPI.THREAD_MULTIPLE)
         atexit.register(MPI.Finalize)
     world_comm = MPI.COMM_WORLD
     node_comm = world_comm.Split_type(MPI.COMM_TYPE_SHARED)
@@ -59,6 +59,7 @@ def start_mpi(block_nonroot_stdout=True):
 
     Npus = world_comm.Get_size()
     rank = world_comm.Get_rank()
+    status = MPI.Status()
     set_mpi_excepthook(world_comm)
 
     world_comm.Barrier()
@@ -446,3 +447,8 @@ def get_node_comm():
     node_comm : Communicator for all PUs on current node.
     """
     return node_comm
+
+
+def get_status():
+    """status, the status of an mpi message."""
+    return status
