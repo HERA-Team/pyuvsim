@@ -20,6 +20,7 @@ dependencies:
   - setuptools>=38.4.0
   - setuptools_scm
   - sphinx
+  - tqdm
   - pip:
     - pyradiosky>=0.1.0
     - lunarsky

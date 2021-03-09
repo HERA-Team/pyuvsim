@@ -18,6 +18,7 @@ dependencies:
   - pyyaml>=5.1
   - scipy
   - setuptools_scm
+  - tqdm
   - pip:
     - pyradiosky>=0.1.0
     - lunarsky

@@ -20,6 +20,7 @@ dependencies:
   - pyyaml>=5.1
   - scipy
   - setuptools_scm
+  - tqdm
   - pip:
     - cached-property
     - pyradiosky>=0.1.0
