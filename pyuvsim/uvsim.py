@@ -1,7 +1,7 @@
 # -*- mode: python; coding: utf-8 -*
 # Copyright (c) 2018 Radio Astronomy Software Group
 # Licensed under the 3-clause BSD License
-
+import tqdm
 import numpy as np
 import yaml
 from astropy.coordinates import EarthLocation
@@ -215,7 +215,8 @@ def _make_task_inds(Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus):
     Nbltf = Nbls * Ntimes * Nfreqs
 
     split_srcs = False
-
+    Npus -= 1
+    rank -= 1
     if (Nbltf < Npus) and (Npus < Nsrcs):
         split_srcs = True
 
@@ -393,6 +394,7 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
     rank = mpi.get_rank()
     comm = mpi.get_comm()
     Npus = mpi.get_Npus()
+    status = mpi.get_status()
 
     if not isinstance(input_uv, UVData):
         raise TypeError("input_uv must be UVData object")
@@ -411,9 +413,6 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
         uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
         if 'world' in input_uv.extra_keywords:
             uv_container.extra_keywords['world'] = input_uv.extra_keywords['world']
-        vis_data = mpi.MPI.Win.Create(uv_container._data_array.value, comm=mpi.world_comm)
-    else:
-        vis_data = mpi.MPI.Win.Create(None, comm=mpi.world_comm)
 
     Nbls = input_uv.Nbls
     Ntimes = input_uv.Ntimes
@@ -445,76 +444,75 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
         raise ValueError("Insufficient memory for simulation.")
 
     Ntasks_tot = Ntimes * Nbls * Nfreqs * Nsky_parts
-
-    local_task_iter = uvdata_to_task_iter(
-        task_inds, input_uv, catalog.subselect(src_inds),
-        beam_list, beam_dict, Nsky_parts=Nsky_parts
-    )
+    if rank != 0:
+        local_task_iter = uvdata_to_task_iter(
+            task_inds, input_uv, catalog.subselect(src_inds),
+            beam_list, beam_dict, Nsky_parts=Nsky_parts
+        )
 
     Ntasks_tot = comm.reduce(Ntasks_tot, op=mpi.MPI.MAX, root=0)
     if rank == 0 and not quiet:
         print("Tasks: ", Ntasks_tot, flush=True)
-        pbar = simutils.progsteps(maxval=Ntasks_tot)
-
-    engine = UVEngine()
-    count = mpi.Counter()
-    size_complex = np.ones(1, dtype=complex).nbytes
-    data_array_shape = (Nbls * Ntimes, 1, Nfreqs, 4)
     uvdata_indices = []
 
-    for task in local_task_iter:
-        engine.set_task(task)
-        vis = engine.make_visibility()
+    if rank == 0:
+        uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
+        completed_workers = 0
+        n_workers = Npus - 1
+        with tqdm.tqdm(total=Ntasks_tot, unit="UVTask") as pbar:
+            while completed_workers < n_workers:
+                msg = comm.recv(source=mpi.MPI.ANY_SOURCE, tag=mpi.MPI.ANY_TAG, status=status)
+                tag = status.Get_tag()
 
-        blti, spw, freq_ind = task.uvdata_index
+                if tag == mpi.tags.READY:
+                    pass
+                elif tag == mpi.tags.DONE:
+                    uv_container.data_array[msg[1]] += msg[0]
+                    pbar.update(1)
 
-        uvdata_indices.append(task.uvdata_index)
+                elif tag == mpi.tags.EXIT:
+                    completed_workers += 1
+                else:
+                    raise ValueError(f"{msg} {tag}")
 
-        flat_ind = np.ravel_multi_index(
-            (blti, spw, freq_ind, 0), data_array_shape
-        )
-        offset = flat_ind * size_complex
+    else:
+        engine = UVEngine()
+        for task in local_task_iter:
+            engine.set_task(task)
+            vis = [engine.make_visibility(), task.uvdata_index]
 
-        vis_data.Lock(0)
-        vis_data.Accumulate(vis, 0, target=offset, op=mpi.MPI.SUM)
-        vis_data.Unlock(0)
+            comm.send(vis, dest=0, tag=mpi.tags.DONE)
 
-        cval = count.next()
-        if rank == 0 and not quiet:
-            pbar.update(cval)
+        comm.send(None, dest=0, tag=mpi.tags.EXIT)
+
     comm.Barrier()
-    count.free()
     if rank == 0 and not quiet:
-        pbar.finish()
-
-    if rank == 0 and not quiet:
-        print("Calculations Complete.", flush=True)
+        print("\nCalculations Complete.", flush=True)
 
     # If profiling is active, save meta data:
     from .profiling import prof     # noqa
     if hasattr(prof, 'meta_file'):  # pragma: nocover
-        # Saving axis sizes on current rank (local) and for the whole job (global).
-        # These lines are affected by issue 179 of line_profiler, so the nocover
-        # above will need to stay until this issue is resolved (see profiling.py).
-        task_inds = np.array(uvdata_indices)
-        bl_inds = task_inds[:, 0] % Nbls
-        time_inds = (task_inds[:, 0] - bl_inds) // Nbls
-        Ntimes_loc = np.unique(time_inds).size
-        Nbls_loc = np.unique(bl_inds).size
-        Nfreqs_loc = np.unique(task_inds[:, 2]).size
-        axes_dict = {
-            'Ntimes_loc': Ntimes_loc,
-            'Nbls_loc': Nbls_loc,
-            'Nfreqs_loc': Nfreqs_loc,
-            'Nsrcs_loc': Nsky_parts,
-            'prof_rank': prof.rank
-        }
+        if rank != 0:
+            # Saving axis sizes on current rank (local) and for the whole job (global).
+            # These lines are affected by issue 179 of line_profiler, so the nocover
+            # above will need to stay until this issue is resolved (see profiling.py).
+            task_inds = np.array(uvdata_indices)
+            bl_inds = task_inds[:, 0] % Nbls
+            time_inds = (task_inds[:, 0] - bl_inds) // Nbls
+            Ntimes_loc = np.unique(time_inds).size
+            Nbls_loc = np.unique(bl_inds).size
+            Nfreqs_loc = np.unique(task_inds[:, 2]).size
+            axes_dict = {
+                'Ntimes_loc': Ntimes_loc,
+                'Nbls_loc': Nbls_loc,
+                'Nfreqs_loc': Nfreqs_loc,
+                'Nsrcs_loc': Nsky_parts,
+                'prof_rank': prof.rank
+            }
 
-        with open(prof.meta_file, 'w') as afile:
-            for k, v in axes_dict.items():
-                afile.write("{} \t {:d}\n".format(k, int(v)))
-
-    vis_data.Free()
+            with open(prof.meta_file, 'w') as afile:
+                for k, v in axes_dict.items():
+                    afile.write("{} \t {:d}\n".format(k, int(v)))
 
     if rank == 0:
         return uv_container
@@ -555,22 +553,27 @@ def run_uvsim(params, return_uv=False, quiet=False):
     skydata = SkyModelData()
 
     if rank == 0:
+        start = Time.now()
         input_uv, beam_list, beam_dict = simsetup.initialize_uvdata_from_params(params)
         skydata, source_list_name = simsetup.initialize_catalog_from_params(
             params, input_uv, return_recarray=False
         )
         skydata = simsetup.SkyModelData(skydata)
+        print(f"Sky Model setup took {(Time.now() - start).to('minute')}")
 
     input_uv = comm.bcast(input_uv, root=0)
     beam_list = comm.bcast(beam_list, root=0)
     beam_dict = comm.bcast(beam_dict, root=0)
     skydata.share(root=0)
 
+    start = Time.now()
     uv_out = run_uvdata_uvsim(
         input_uv, beam_list, beam_dict=beam_dict, catalog=skydata, quiet=quiet
     )
+    print(f"Run uvdata uvsim took {(Time.now() - start).to('minute')}")
 
     if rank == 0:
+        start = Time.now()
         if isinstance(params, str):
             with open(params, 'r') as pfile:
                 param_dict = yaml.safe_load(pfile)
@@ -599,6 +602,7 @@ def run_uvsim(params, return_uv=False, quiet=False):
         uv_out.history = history
 
         simutils.write_uvdata(uv_out, param_dict, dryrun=return_uv)
+        print(f"Data Writing took {(Time.now() - start).to('minute')}")
 
     if return_uv:
         return uv_out
