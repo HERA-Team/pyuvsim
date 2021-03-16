@@ -546,6 +546,10 @@ def run_uvsim(params, return_uv=False, quiet=False):
     rank = mpi.get_rank()
     comm = mpi.get_comm()
 
+    Npus = mpi.get_Npus()
+    if Npus < 2:
+        raise ValueError("Pyuvsim requires at least 2 Processing Units (PUs).")
+
     input_uv = UVData()
     beam_list = None
     beam_dict = None

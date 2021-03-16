@@ -252,3 +252,11 @@ def test_sim_on_moon():
 
     assert np.allclose(uv_out.data_array[:, 0, :, 0], 0.5)
     assert uv_out.extra_keywords['world'] == 'moon'
+
+
+def test_npu_error():
+    params = pyuvsim.simsetup._config_str_to_dict(
+        os.path.join(SIM_DATA_PATH, 'test_config', 'param_1time_1src_testcat.yaml')
+    )
+    with pytest.raises(ValueError, match="Pyuvsim requires at least 2"):
+        pyuvsim.run_uvsim(params, return_uv=True)
