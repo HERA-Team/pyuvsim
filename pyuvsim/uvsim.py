@@ -409,10 +409,6 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
         print('Ntimes:', input_uv.Ntimes, flush=True)
         print('Nfreqs:', input_uv.Nfreqs, flush=True)
         print('Nsrcs:', catalog.Ncomponents, flush=True)
-    if rank == 0:
-        uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
-        if 'world' in input_uv.extra_keywords:
-            uv_container.extra_keywords['world'] = input_uv.extra_keywords['world']
 
     Nbls = input_uv.Nbls
     Ntimes = input_uv.Ntimes
@@ -457,6 +453,9 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
 
     if rank == 0:
         uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
+        if 'world' in input_uv.extra_keywords:
+            uv_container.extra_keywords['world'] = input_uv.extra_keywords['world']
+
         completed_workers = 0
         n_workers = Npus - 1
         with tqdm.tqdm(total=Ntasks_tot, unit="UVTask") as pbar:
