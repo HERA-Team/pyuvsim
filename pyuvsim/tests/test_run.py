@@ -66,6 +66,7 @@ def test_run_paramfile_uvsim(goto_tempdir, paramfile):
 
 
 @pytest.mark.parametrize('model', ['monopole', 'cosza', 'quaddome', 'monopole-nonflat'])
+@pytest.mark.parallel(2)
 def test_analytic_diffuse(model, tmpdir):
     # Generate the given model and simulate for a few baselines.
     # Import from analytic_diffuse  (consider moving to rasg_affiliates?)
@@ -120,6 +121,11 @@ def test_analytic_diffuse(model, tmpdir):
         yaml.dump(obspar, ofile, default_flow_style=False)
 
     uv_out = pyuvsim.run_uvsim(obspar_path, return_uv=True)
+
+    # Loading the file and comparing is only done on rank 0.
+    if pyuvsim.mpi.rank != 0:
+        return
+
     # Convert from Jy to K sr
     dat = uv_out.data_array[:, 0, 0, 0] * jy_to_ksr(uv_out.freq_array[0, 0]).value
     # Evaluate the solution and compare to visibilities.
@@ -130,6 +136,7 @@ def test_analytic_diffuse(model, tmpdir):
 
 
 @pytest.mark.filterwarnings("ignore:The frequency field is included in the recarray")
+@pytest.mark.parallel(2)
 def test_run_paramdict_uvsim():
     # Running a simulation from parameter dictionary.
 
@@ -143,6 +150,7 @@ def test_run_paramdict_uvsim():
 @pytest.mark.parametrize(
     "spectral_type",
     ["flat", "subband", "spectral_index"])
+@pytest.mark.parallel(2)
 def test_run_gleam_uvsim(spectral_type):
     params = pyuvsim.simsetup._config_str_to_dict(
         os.path.join(SIM_DATA_PATH, 'test_config', 'param_1time_1src_testgleam.yaml')
@@ -157,6 +165,7 @@ def test_run_gleam_uvsim(spectral_type):
 @pytest.mark.parametrize(
     "spectral_type",
     ["subband", "spectral_index"])
+@pytest.mark.parallel(2)
 def test_zenith_spectral_sim(spectral_type, tmpdir):
     # Make a power law source at zenith in three ways.
     # Confirm that simulated visibilities match expectation.
@@ -195,6 +204,9 @@ def test_zenith_spectral_sim(spectral_type, tmpdir):
     params['select'] = {'antenna_nums' : [1, 2]}
 
     uv_out = pyuvsim.run_uvsim(params, return_uv=True)
+    # Loading the file and comparing is only done on rank 0.
+    if pyuvsim.mpi.rank != 0:
+        return
 
     for ii in range(uv_out.Nbls):
         assert np.allclose(uv_out.data_array[ii, 0, :, 0], spectrum / 2)
@@ -216,6 +228,7 @@ def test_input_uv_error():
 
 
 @pytest.mark.skipif('not pyuvsim.astropy_interface.hasmoon')
+@pytest.mark.parallel(2)
 def test_sim_on_moon():
     from pyuvsim.astropy_interface import MoonLocation
     param_filename = os.path.join(SIM_DATA_PATH, 'test_config', 'obsparam_tranquility_hex.yaml')
@@ -233,5 +246,9 @@ def test_sim_on_moon():
     uv_out = pyuvsim.uvsim.run_uvdata_uvsim(
         uv_obj, beam_list, beam_dict, catalog=sources, quiet=True
     )
+    # Loading the file and comparing is only done on rank 0.
+    if pyuvsim.mpi.rank != 0:
+        return
+
     assert np.allclose(uv_out.data_array[:, 0, :, 0], 0.5)
     assert uv_out.extra_keywords['world'] == 'moon'
