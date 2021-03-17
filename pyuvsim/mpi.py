@@ -38,7 +38,6 @@ def enum(*sequential, **named):
 tags = enum('READY', 'DONE', 'EXIT', 'START')
 
 
-
 def set_mpi_excepthook(mpi_comm):
     """Kill the whole job on an uncaught python exception"""
 
