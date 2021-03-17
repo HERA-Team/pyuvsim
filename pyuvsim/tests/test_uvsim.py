@@ -586,20 +586,20 @@ def test_task_coverage(Npus, Nbls, Ntimes, Nfreqs, Nsrcs):
 
     tasks_expected = np.column_stack((bltfi, srci))
     tasks_all = []
-    for rank in range(1, Npus):
-        task_inds, src_inds, Ntasks_local, Nsrcs_local = pyuvsim.uvsim._make_task_inds(
-            Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
-        )
-        if not src_split:
-            src_inds = np.arange(Nsrcs)[src_inds]   # Turn slice into iterator
-        tasks = itertools.product(task_inds, src_inds)
-        tasks_all.append(tasks)
+    
+    task_inds, src_inds = pyuvsim.uvsim._make_task_inds(
+        Nbls, Ntimes, Nfreqs, Nsrcs, Npus
+    )
+    if not src_split:
+        src_inds = np.arange(Nsrcs)[src_inds]   # Turn slice into iterator
+    tasks = itertools.product(task_inds, src_inds)
+    tasks_all.append(tasks)
     tasks_all = itertools.chain(*tasks_all)
     tasks = np.array(list(tasks_all))
     if src_split:
         inds = np.lexsort((tasks[:, 0], tasks[:, 1]), axis=0)
         tasks = tasks[inds]
-
+    print(tasks.shape, tasks_expected.shape)
     assert np.all(tasks == tasks_expected)
 
 
