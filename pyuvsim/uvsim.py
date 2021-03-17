@@ -2,13 +2,14 @@
 # Copyright (c) 2018 Radio Astronomy Software Group
 # Licensed under the 3-clause BSD License
 import tqdm
-import numpy as np
 import yaml
-from astropy.coordinates import EarthLocation
+import itertools
+import numpy as np
+from pyuvdata import UVData
 import astropy.units as units
 from astropy.units import Quantity
+from astropy.coordinates import EarthLocation
 from astropy.constants import c as speed_of_light
-from pyuvdata import UVData
 
 from . import mpi
 from . import simsetup
@@ -216,20 +217,17 @@ def _make_task_inds(Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus):
 
     split_srcs = False
     Npus -= 1
-    rank -= 1
-    if (Nbltf < Npus) and (Npus < Nsrcs):
-        split_srcs = True
+
+    split_srcs = (Nbltf < Npus) and (Npus < Nsrcs)
 
     if split_srcs:
-        src_inds, Nsrcs_local = simutils.iter_array_split(rank, Nsrcs, Npus)
-        task_inds = range(Nbltf)
-        Ntasks_local = Nbltf
-    else:
-        task_inds, Ntasks_local = simutils.iter_array_split(rank, Nbltf, Npus)
         src_inds = range(Nsrcs)
-        Nsrcs_local = Nsrcs
+        task_inds = range(Nbltf)
+    else:
+        task_inds = range(Nbltf)
+        src_inds = range(Nsrcs)
 
-    return task_inds, src_inds, Ntasks_local, Nsrcs_local
+    return task_inds, src_inds
 
 
 def uvdata_to_task_iter(task_ids, input_uv, catalog, beam_list, beam_dict, Nsky_parts=1):
@@ -415,10 +413,6 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
     Nfreqs = input_uv.Nfreqs
     Nsrcs = catalog.Ncomponents
 
-    task_inds, src_inds, Ntasks_local, Nsrcs_local = _make_task_inds(
-        Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
-    )
-
     # Construct beam objects from strings
     beam_list.set_obj_mode(use_shared_mem=True)
 
@@ -439,35 +433,46 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
     if Nsky_parts > Nsrcs:
         raise ValueError("Insufficient memory for simulation.")
 
-    Ntasks_tot = Ntimes * Nbls * Nfreqs * Nsky_parts
-    if rank != 0:
-        local_task_iter = uvdata_to_task_iter(
-            task_inds, input_uv, catalog.subselect(src_inds),
-            beam_list, beam_dict, Nsky_parts=Nsky_parts
-        )
-
-    Ntasks_tot = comm.reduce(Ntasks_tot, op=mpi.MPI.MAX, root=0)
-    if rank == 0 and not quiet:
-        print("Tasks: ", Ntasks_tot, flush=True)
     uvdata_indices = []
-
+    Ntasks_tot = Nbls * Ntimes * Nfreqs * Nsky_parts  # Nsky_parts
+    Ntasks_tot = comm.reduce(Ntasks_tot, op=mpi.MPI.MAX, root=0)
     if rank == 0:
+        completed_workers = 0
+        n_workers = Npus - 1
+
+        task_inds, src_inds = _make_task_inds(
+            Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
+        )
+        # Ntasks_tot = int(len(task_inds) * Nsky_parts)
+        print("Tasks: ", Ntasks_tot, flush=True)
+
         uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
+        chunksize1 = int(np.ceil(.1 * Nbls * Nfreqs * Ntimes / n_workers))
+        print(chunksize1)
+        chunksize2 = int(np.floor(Nsrcs / Nsky_parts))
+        all_iter = simutils.chunked_iterator_product(
+            task_inds, src_inds, chunksize1, chunksize2,
+        )
         if 'world' in input_uv.extra_keywords:
             uv_container.extra_keywords['world'] = input_uv.extra_keywords['world']
 
-        completed_workers = 0
-        n_workers = Npus - 1
         with tqdm.tqdm(total=Ntasks_tot, unit="UVTask") as pbar:
             while completed_workers < n_workers:
                 msg = comm.recv(source=mpi.MPI.ANY_SOURCE, tag=mpi.MPI.ANY_TAG, status=status)
+                source = status.Get_source()
                 tag = status.Get_tag()
 
                 if tag == mpi.tags.READY:
-                    pass
+                    try:
+                        comm.send(next(all_iter), dest=source, tag=mpi.tags.START)
+                    except StopIteration:
+                        comm.send(None, dest=source, tag=mpi.tags.EXIT)
+
                 elif tag == mpi.tags.DONE:
-                    uv_container.data_array[msg[1]] += msg[0]
-                    pbar.update(1)
+                    uv_inds = tuple(map(np.asarray, np.asarray(msg[0]).T))
+                    vis = np.asarray(msg[1], dtype=np.complex64)
+                    uv_container.data_array[uv_inds] += vis
+                    pbar.update(vis.shape[0])
 
                 elif tag == mpi.tags.EXIT:
                     completed_workers += 1
@@ -476,11 +481,34 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
 
     else:
         engine = UVEngine()
-        for task in local_task_iter:
-            engine.set_task(task)
-            vis = [engine.make_visibility(), task.uvdata_index]
+        with open(f"log_{rank:0>2}.out" , "w") as logfile:
+            mpi.MPI.Wtime()
+            dt = mpi.MPI.Wtime()
+            logfile.write(f"{dt}\n")
+            while True:
+                comm.send(None, dest=0, tag=mpi.tags.READY)
+                msg = comm.recv(source=0, tag=mpi.MPI.ANY_TAG, status=status)
+                tag = status.Get_tag()
+                if tag == mpi.tags.START:
+                    msg_task_inds, msg_src_inds = msg
+                    return_inds = []
+                    return_vis = []
 
-            comm.send(vis, dest=0, tag=mpi.tags.DONE)
+                    # get message with task_inds and src_inds
+                    local_task_iter = uvdata_to_task_iter(
+                        msg_task_inds, input_uv, catalog.subselect(msg_src_inds),
+                        beam_list, beam_dict, Nsky_parts=Nsky_parts
+                    )
+                    for task in local_task_iter:
+                        engine.set_task(task)
+                        return_vis.append(engine.make_visibility())
+                        return_inds.append(list(task.uvdata_index))
+                        dt = mpi.MPI.Wtime()
+                        logfile.write(f"{dt}\n")
+                    comm.send([return_inds, return_vis], dest=0, tag=mpi.tags.DONE)
+
+                elif tag == mpi.tags.EXIT:
+                    break
 
         comm.send(None, dest=0, tag=mpi.tags.EXIT)
 
@@ -573,9 +601,9 @@ def run_uvsim(params, return_uv=False, quiet=False):
     uv_out = run_uvdata_uvsim(
         input_uv, beam_list, beam_dict=beam_dict, catalog=skydata, quiet=quiet
     )
-    print(f"Run uvdata uvsim took {(Time.now() - start).to('minute')}")
 
     if rank == 0:
+        print(f"Run uvdata uvsim took {(Time.now() - start).to('minute')}")
         start = Time.now()
         if isinstance(params, str):
             with open(params, 'r') as pfile:
