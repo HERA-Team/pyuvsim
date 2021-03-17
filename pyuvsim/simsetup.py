@@ -473,16 +473,19 @@ class SkyModelData:
         such that the returned SkyModelData object carries views into the current object's arrays.
         """
         new_sky = SkyModelData()
-
         new_sky.Ncomponents = len(inds)
         new_sky.nside = self.nside
         new_sky.component_type = self.component_type
-        if self.name is not None:
-            new_sky.name = self.name[inds]
         if isinstance(inds, range):
-            new_sky.stokes_I = self.stokes_I[:, slice(inds.start, inds.stop, inds.step)]
-        else:
-            new_sky.stokes_I = self.stokes_I[:, inds]
+            inds = slice(inds.start, inds.stop, inds.step)
+
+        if self.name is not None:
+            # print(self.name)
+            # print("inds", inds, flush=True)
+            new_sky.name = self.name[inds]
+
+        new_sky.stokes_I = self.stokes_I[..., inds]
+
         new_sky.ra = self.ra[inds]
         new_sky.dec = self.dec[inds]
         new_sky.Nfreqs = self.Nfreqs
@@ -554,7 +557,6 @@ class SkyModelData:
         ra_use = Longitude(self.ra, unit='deg')
         dec_use = Latitude(self.dec, unit='deg')
         stokes_use = np.zeros((4, self.Nfreqs, self.Ncomponents), dtype=float)
-
         stokes_use[0, ...] = self.stokes_I
 
         if self.polarized is not None:
