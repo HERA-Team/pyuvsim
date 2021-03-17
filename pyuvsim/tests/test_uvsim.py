@@ -562,69 +562,45 @@ def test_local_task_gen():
         assert np.allclose(engine1.make_visibility(), engine0.make_visibility())
 
 
-def test_task_coverage():
+@pytest.mark.parametrize("Npus", [5, 13, 19])
+@pytest.mark.parametrize(
+    "Nbls,Ntimes,Nfreqs,Nsrcs",
+    [
+        (4, 3, 1, 10),  # Case 1 -- (Npus < Nbltf)
+        (2, 1, 2, 100),  # Case 2 -- (Nbltf < Npus and Nsrcs > Npus)
+    ]
+)
+def test_task_coverage(Npus, Nbls, Ntimes, Nfreqs, Nsrcs):
     """
     Check that the task ids generated in different scenarios
     cover all combinations of baseline/time/frequency and source.
     """
 
-    Npus_list = [1, 5, 13, 19]
-    for Npus in Npus_list:
-        # Case 1 -- (Npus < Nbltf)
-
-        print(Npus)
-        Nbls = 4
-        Ntimes = 3
-        Nfreqs = 1
-        Nsrcs = 10
-
-        Nbltf = Nbls * Ntimes * Nfreqs
-
+    Nbltf = Nbls * Ntimes * Nfreqs
+    src_split = (Nbltf < Npus) and (Npus < Nsrcs)
+    if not src_split:
         # List of pairs -- (bl/t/f index, source index)
         srci, bltfi = map(np.ndarray.flatten, np.meshgrid(np.arange(Nsrcs), np.arange(Nbltf)))
-
-        tasks_expected = np.column_stack((bltfi, srci))
-        tasks_all = []
-        for rank in range(Npus):
-            task_inds, src_inds, Ntasks_local, Nsrcs_local = pyuvsim.uvsim._make_task_inds(
-                Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
-            )
-            src_inds = np.arange(Nsrcs)[src_inds]   # Turn slice into iterator
-            tasks = itertools.product(task_inds, src_inds)
-            tasks_all.append(tasks)
-        tasks_all = itertools.chain(*tasks_all)
-        tasks = np.array(list(tasks_all))
-        assert np.all(tasks == tasks_expected)
-
-        # Case 2 -- (Nbltf < Npus and Nsrcs > Npus)
-
-        if Npus == 1:
-            continue  # case 2 won't work for 1 pu
-
-        Nbls = 2
-        Ntimes = 1
-        Nfreqs = 2
-        Nsrcs = 100
-
-        Nbltf = Nbls * Ntimes * Nfreqs
-
+    else:
         bltfi, srci = map(np.ndarray.flatten, np.meshgrid(np.arange(Nbltf), np.arange(Nsrcs)))
 
-        tasks_expected = np.column_stack((bltfi, srci))
-        tasks_all = []
-        for rank in range(Npus):
-            task_inds, src_inds, Ntasks_local, Nsrcs_local = pyuvsim.uvsim._make_task_inds(
-                Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
-            )
-
-            tasks = itertools.product(task_inds, src_inds)
-            tasks_all.append(tasks)
-        tasks_all = itertools.chain(*tasks_all)
-        tasks = np.array(list(tasks_all))
-
-        # Returned task indices are out of order, compared with the meshgrid.
+    tasks_expected = np.column_stack((bltfi, srci))
+    tasks_all = []
+    for rank in range(1, Npus):
+        task_inds, src_inds, Ntasks_local, Nsrcs_local = pyuvsim.uvsim._make_task_inds(
+            Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
+        )
+        if not src_split:
+            src_inds = np.arange(Nsrcs)[src_inds]   # Turn slice into iterator
+        tasks = itertools.product(task_inds, src_inds)
+        tasks_all.append(tasks)
+    tasks_all = itertools.chain(*tasks_all)
+    tasks = np.array(list(tasks_all))
+    if src_split:
         inds = np.lexsort((tasks[:, 0], tasks[:, 1]), axis=0)
-        assert np.all(tasks[inds] == tasks_expected)
+        tasks = tasks[inds]
+
+    assert np.all(tasks == tasks_expected)
 
 
 def test_source_splitting():
