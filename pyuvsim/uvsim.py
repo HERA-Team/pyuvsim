@@ -201,7 +201,7 @@ class UVEngine(object):
         return vis_vector
 
 
-def _make_task_inds(Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus):
+def _make_task_inds(Nbls, Ntimes, Nfreqs, Nsrcs, Npus):
     """
     Make iterators defining task and sources computed on rank.
 
@@ -441,7 +441,7 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
         n_workers = Npus - 1
 
         task_inds, src_inds = _make_task_inds(
-            Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
+            Nbls, Ntimes, Nfreqs, Nsrcs, Npus
         )
         # Ntasks_tot = int(len(task_inds) * Nsky_parts)
         print("Tasks: ", Ntasks_tot, flush=True)
