@@ -586,7 +586,7 @@ def test_task_coverage(Npus, Nbls, Ntimes, Nfreqs, Nsrcs):
 
     tasks_expected = np.column_stack((bltfi, srci))
     tasks_all = []
-    
+
     task_inds, src_inds = pyuvsim.uvsim._make_task_inds(
         Nbls, Ntimes, Nfreqs, Nsrcs, Npus
     )

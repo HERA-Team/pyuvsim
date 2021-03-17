@@ -83,8 +83,6 @@ def start_mpi(block_nonroot_stdout=True):
         atexit.register(sys.stdout.close)
 
 
-
-
 def shared_mem_bcast(arr, root=0):
     """
     Allocate shared memory on each node and place contents of arr in it.

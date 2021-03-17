@@ -3,7 +3,6 @@
 # Licensed under the 3-clause BSD License
 import tqdm
 import yaml
-import itertools
 import numpy as np
 from pyuvdata import UVData
 import astropy.units as units
