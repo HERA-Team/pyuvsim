@@ -4,6 +4,7 @@
 
 import os
 import sys
+import itertools
 import time as pytime
 from datetime import timedelta
 
@@ -323,3 +324,39 @@ def estimate_skymodel_memory_usage(Ncomponents, Nfreqs):
     mem_est += np.sum([sys.getsizeof(v) * Ncomponents * Nfreqs
                        for k, v in Ncomp_Nfreq_attrs.items()])
     return mem_est
+
+
+def grouper_it(iterable, chunksize=1):
+    """Chunk an iterator and return an iterator.
+
+    Parameters
+    ----------
+    iterable : Iterable
+        The iterable object to chunk
+    chunksize : int
+        size of chunks desired
+
+    Returns
+    -------
+    iterable chunked into sizes
+    """
+    # it = iter(iterable)
+    # while True:
+    #     chunk_it = itertools.islice(it, chunksize)
+    #     try:
+    #         first_el = next(chunk_it)
+    #     except StopIteration:
+    #         return
+    #     yield itertools.chain((first_el,), chunk_it)
+    it = iter(iterable)
+    while True:
+        chunk = list(itertools.islice(it, chunksize))
+        if not chunk:
+            return
+        yield chunk
+
+
+def chunked_iterator_product(iter1, iter2, chunksize1, chunksize2):
+    for i1 in grouper_it(iter1, chunksize1):
+        for i2 in grouper_it(iter2, chunksize2):
+            yield i1, i2
