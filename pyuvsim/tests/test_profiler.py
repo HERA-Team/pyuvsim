@@ -23,6 +23,7 @@ def profdata_dir_setup(tmpdir):
     return outpath
 
 
+@pytest.mark.parallel(2)
 def test_profiler(tmpdir):
     line_profiler = pytest.importorskip('line_profiler')
     outpath = profdata_dir_setup(tmpdir)
@@ -33,6 +34,8 @@ def test_profiler(tmpdir):
         pyuvsim.profiling.set_profiler(outfile_prefix=testprof_fname[:-4], dump_raw=True)
     param_filename = os.path.join(SIM_DATA_PATH, 'test_config', 'param_1time_1src_testcat.yaml')
     pyuvsim.uvsim.run_uvsim(param_filename, return_uv=True)
+    if pyuvsim.mpi.rank != 0:
+        return
     time_profiler = pyuvsim.profiling.get_profiler()
     time_profiler.disable_by_count()
     assert isinstance(time_profiler, line_profiler.LineProfiler)
