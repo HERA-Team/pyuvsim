@@ -448,7 +448,6 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
 
         uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
         chunksize1 = int(np.ceil(.1 * Nbls * Nfreqs * Ntimes / n_workers))
-        print(chunksize1)
         chunksize2 = int(np.floor(Nsrcs / Nsky_parts))
         all_iter = simutils.chunked_iterator_product(
             task_inds, src_inds, chunksize1, chunksize2,
