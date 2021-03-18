@@ -447,7 +447,7 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
 
         uv_container = simsetup._complete_uvdata(input_uv, inplace=False)
         chunksize1 = int(np.ceil(.1 * Nbls * Nfreqs * Ntimes / n_workers))
-        chunksize2 = int(np.floor(Nsrcs / Nsky_parts))
+        chunksize2 = int(np.ceil(Nsrcs / Nsky_parts))
         all_iter = simutils.chunked_iterator_product(
             task_inds, src_inds, chunksize1, chunksize2,
         )
@@ -467,10 +467,9 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
                         comm.send(None, dest=source, tag=mpi.tags.EXIT)
 
                 elif tag == mpi.tags.DONE:
-                    uv_inds = tuple(map(np.asarray, np.asarray(msg[0]).T))
-                    vis = np.asarray(msg[1], dtype=np.complex64)
+                    uv_inds, vis = msg[0], msg[1]
                     uv_container.data_array[uv_inds] += vis
-                    pbar.update(vis.shape[0])
+                    pbar.update(1)
 
                 elif tag == mpi.tags.EXIT:
                     completed_workers += 1
@@ -485,8 +484,6 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
             tag = status.Get_tag()
             if tag == mpi.tags.START:
                 msg_task_inds, msg_src_inds = msg
-                return_inds = []
-                return_vis = []
 
                 # get message with task_inds and src_inds
                 local_task_iter = uvdata_to_task_iter(
@@ -495,9 +492,11 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
                 )
                 for task in local_task_iter:
                     engine.set_task(task)
-                    return_vis.append(engine.make_visibility())
-                    return_inds.append(list(task.uvdata_index))
-                comm.send([return_inds, return_vis], dest=0, tag=mpi.tags.DONE)
+                    comm.send(
+                        [task.uvdata_index, engine.make_visibility()],
+                        dest=0,
+                        tag=mpi.tags.DONE,
+                    )
 
             elif tag == mpi.tags.EXIT:
                 break
