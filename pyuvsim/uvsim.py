@@ -479,34 +479,28 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
 
     else:
         engine = UVEngine()
-        with open(f"log_{rank:0>2}.out" , "w") as logfile:
-            mpi.MPI.Wtime()
-            dt = mpi.MPI.Wtime()
-            logfile.write(f"{dt}\n")
-            while True:
-                comm.send(None, dest=0, tag=mpi.tags.READY)
-                msg = comm.recv(source=0, tag=mpi.MPI.ANY_TAG, status=status)
-                tag = status.Get_tag()
-                if tag == mpi.tags.START:
-                    msg_task_inds, msg_src_inds = msg
-                    return_inds = []
-                    return_vis = []
+        while True:
+            comm.send(None, dest=0, tag=mpi.tags.READY)
+            msg = comm.recv(source=0, tag=mpi.MPI.ANY_TAG, status=status)
+            tag = status.Get_tag()
+            if tag == mpi.tags.START:
+                msg_task_inds, msg_src_inds = msg
+                return_inds = []
+                return_vis = []
 
-                    # get message with task_inds and src_inds
-                    local_task_iter = uvdata_to_task_iter(
-                        msg_task_inds, input_uv, catalog.subselect(msg_src_inds),
-                        beam_list, beam_dict, Nsky_parts=Nsky_parts
-                    )
-                    for task in local_task_iter:
-                        engine.set_task(task)
-                        return_vis.append(engine.make_visibility())
-                        return_inds.append(list(task.uvdata_index))
-                        dt = mpi.MPI.Wtime()
-                        logfile.write(f"{dt}\n")
-                    comm.send([return_inds, return_vis], dest=0, tag=mpi.tags.DONE)
+                # get message with task_inds and src_inds
+                local_task_iter = uvdata_to_task_iter(
+                    msg_task_inds, input_uv, catalog.subselect(msg_src_inds),
+                    beam_list, beam_dict, Nsky_parts=Nsky_parts
+                )
+                for task in local_task_iter:
+                    engine.set_task(task)
+                    return_vis.append(engine.make_visibility())
+                    return_inds.append(list(task.uvdata_index))
+                comm.send([return_inds, return_vis], dest=0, tag=mpi.tags.DONE)
 
-                elif tag == mpi.tags.EXIT:
-                    break
+            elif tag == mpi.tags.EXIT:
+                break
 
         comm.send(None, dest=0, tag=mpi.tags.EXIT)
 
