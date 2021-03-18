@@ -415,10 +415,6 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
     Nfreqs = input_uv.Nfreqs
     Nsrcs = catalog.Ncomponents
 
-    task_inds, src_inds, Ntasks_local, Nsrcs_local = _make_task_inds(
-        Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
-    )
-
     # Construct beam objects from strings
     beam_list.set_obj_mode(use_shared_mem=True)
 
@@ -440,7 +436,12 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
         raise ValueError("Insufficient memory for simulation.")
 
     Ntasks_tot = Ntimes * Nbls * Nfreqs * Nsky_parts
+
     if rank != 0:
+        task_inds, src_inds, Ntasks_local, Nsrcs_local = _make_task_inds(
+            Nbls, Ntimes, Nfreqs, Nsrcs, rank, Npus
+        )
+
         local_task_iter = uvdata_to_task_iter(
             task_inds, input_uv, catalog.subselect(src_inds),
             beam_list, beam_dict, Nsky_parts=Nsky_parts
