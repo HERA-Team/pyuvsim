@@ -444,16 +444,17 @@ def run_uvdata_uvsim(input_uv, beam_list, beam_dict=None, catalog=None, quiet=Fa
     if Nsky_parts > Nsrcs:
         raise ValueError("Insufficient memory for simulation.")
 
-    Ntasks_tot = Ntimes * Nbls * Nfreqs * Nsky_parts
-
     local_task_iter = uvdata_to_task_iter(
         task_inds, input_uv, catalog.subselect(src_inds),
         beam_list, beam_dict, Nsky_parts=Nsky_parts
     )
 
-    Ntasks_tot = comm.reduce(Ntasks_tot, op=mpi.MPI.MAX, root=0)
+    Ntasks_tot = Ntasks_local * Nsky_parts
+    # Sum all the tasks across each node
+    Nsky_parts = comm.reduce(Nsky_parts, op=mpi.MPI.MAX, root=0)
+    Ntasks_tot = comm.reduce(Ntasks_tot, op=mpi.MPI.SUM, root=0)
     if rank == 0 and not quiet:
-        print(f"Nsky parts: {Nsky_parts}", flush=True)
+        print(f"Max Nsky parts: {Nsky_parts}", flush=True)
         print("Tasks: ", Ntasks_tot, flush=True)
         pbar = simutils.progsteps(maxval=Ntasks_tot)
 
